@@ -1,0 +1,24 @@
+{
+  "wrkSFfCgAAJSuw8ipJNgSOdDSOJLFhig": {
+    "created": "2024-01-01",
+    "max_count": 10,
+    "ascending": true,
+    "workspace_id": 20428244,
+    "client_id": "bugtrack_notify",
+    "client_secret": "922DEEF8-BF8D-C548-8986-BB63EFA137E6",
+    "schedule": {
+      "cron": "*/10 18-23 * * *"
+    }
+  },
+  "wrkSFfCgAACytuaSaRbboRSwxrQLo0cg": {
+    "created": "2024-01-01",
+    "max_count": 10,
+    "ascending": true,
+    "workspace_id": 20428244,
+    "client_id": "bugtrack_notify",
+    "client_secret": "922DEEF8-BF8D-C548-8986-BB63EFA137E6",
+    "schedule": {
+      "cron": "0 10-23 * * *"
+    }
+  }
+}
