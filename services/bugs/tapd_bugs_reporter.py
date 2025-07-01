@@ -72,7 +72,7 @@ class TapdBugReporter:
         total = len(bugs)
 
         if total == 0:
-            return "⚠️ 未发现符合要求的缺陷数据 / 版本号有误", " ", " ", " "
+            return "⚠️ 未发现符合要求的缺陷数据 / 版本号有误", " ", " "
 
         unresolved = sum(1 for b in bugs if b['status'] in self.unresolved_status)
         auto_bugs = sum(1 for b in bugs if any(kw in b['title'] for kw in self.auto_keywords))
@@ -99,6 +99,8 @@ class TapdBugReporter:
         if status_counts["其他状态"] > 0:
             status_table.append(["其他状态", status_counts["其他状态"]])
 
+
+        # 输出缺陷状态统计图
         # status_table_dict = {item[0]: item[1] for item in status_table}
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d")

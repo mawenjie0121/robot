@@ -36,3 +36,15 @@ class TAPDHandler:
         response = requests.get(url, params=params, auth=auth)
         response.raise_for_status()
         return response.json()
+
+    def get_status_options(self, workspace_id):
+        url = "http://apiv2.tapd.woa.com/stories/get_fields_info"
+        params = {"workspace_id": workspace_id}
+        auth = (self.client_id, self.client_secret)
+        resp = requests.get(url, params=params, auth=auth)
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+        # 只返回 status 字段下的 options
+        return data.get("status", {}).get("options", {})
+
+

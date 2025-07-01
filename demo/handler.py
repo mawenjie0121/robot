@@ -97,13 +97,10 @@ def handle_bug_report(content, req_msg, server, client_id, client_secret):
             ret.content = analysis_report
         server.send_markdown(req_msg.chat_id, ret.content)
 
+        # 发送图片
         if os.path.exists(analyzer_res):
-            server.send_file(req_msg.chat_id, analyzer_res)
-
-        # # 发送图片
-        # if os.path.exists(pic_file):
-        #     base64_img, md5_img = file_to_base64_and_md5(pic_file)
-        #     server.send_encoded_image(req_msg.chat_id, base64_img, md5_img)
+            base64_img, md5_img = file_to_base64_and_md5(analyzer_res)
+            server.send_encoded_image(req_msg.chat_id, base64_img, md5_img)
 
         return RspTextMsg()
     except Exception as e:

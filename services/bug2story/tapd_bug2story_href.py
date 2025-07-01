@@ -4,9 +4,9 @@ from datetime import datetime
 
 # 默认处理中状态
 DEFAULT_IN_PROCESS_STATES = (
-    '新', '已排期', '开发中', '产品体验中', '规划中',
-    '评审中', '测试中', '待排期', '初评', '测试评审',
-    '待规划', '已评审', '待测试', '待验收'
+    '新', '已排期', '开发中', '规划中',
+    '待排期', '初评',
+    '待规划'
 )
 
 class TapdBug2StoryHrefFetcher:

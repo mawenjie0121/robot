@@ -35,38 +35,17 @@ def fetch_all_stories(handler, base_params: Dict, limit=200) -> tuple[DataFrame,
     # ===== 数据清洗 =====
     stories = [item["Story"] for item in all_data]
 
-    # 状态映射表
-    status_mapping = {
-        "status_2": "新",
-        "status_4": "已排期",
-        "status_5": "开发中",
-        "status_6": "产品体验中",
-        "status_8": "测试通过",
-        "status_10": "已发布",
-        "status_12": "已拒绝",
-        "planning": "规划中",
-        "status_13": "评审中",
-        "status_14": "测试中",
-        "status_15": "已合入",
-        "status_16": "挂起",
-        "status_17": "待排期",
-        "status_18": "初评",
-        "status_19": "测试评审",
-        "status_20": "需求终止",
-        "status_21": "待规划",
-        "status_22": "已评审",
-        "status_23": "待测试",
-        "status_24": "待验收",
-        "status_25": "待发布",
-        "status_26": "发布中",
-        "status_27": "需求暂停"
-    }
+
+
+    workspace_id = params["workspace_id"]
+    status_mapping = handler.get_status_options(workspace_id)
+
 
     # ===== 需要统计的状态 =====
     in_process_states = {
-        '新', '已排期', '开发中', '产品体验中', '规划中',
-        '评审中', '测试中', '待排期', '初评', '测试评审',
-        '待规划', '已评审', '待测试', '待验收'
+        '新', '已排期', '开发中', '规划中',
+        '待排期', '初评',
+        '待规划'
     }
 
     # ===== 处理每个需求的字段，并过滤 =====

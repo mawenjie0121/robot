@@ -5,11 +5,10 @@ import traceback
 import sys
 import logging
 import re
-import json
-from datetime import datetime
-from functools import partial
 
-from bug2story_handler import handle_export_story
+
+from bug2story_handler import handle_export_story, parse_bug2story_args, add_bug2story_task, run_bug2story_once, \
+    start_bug2story_scheduler
 from handler import (
     handle_bug_report, handle_bug_statistics,
     handle_version_compare_report, handle_simple_bugtrack_command, add_group_permission
@@ -18,8 +17,6 @@ from handler import (
 # 启动其他定时任务
 from my_scheduler import start_scheduler
 
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 # 全局集合用于去重，防止重复处理同一条消息
 processed_msg_ids = set()
@@ -46,156 +43,6 @@ def is_group_configured(chat_id):
 def get_group_config(chat_id):
     return group_configs.get(chat_id, {})
 
-
-
-# ========== 定时任务相关 ==========
-
-import os
-import json
-from datetime import datetime
-
-def add_bug2story_task(chat_id, max_count=10, ascending=True, created=None, workspace_id=None, client_id=None, client_secret=None, json_path="bug2story_task.json"):
-    default_config = {
-        "created": created or datetime.now().strftime("%Y-%m-%d"),
-        "max_count": max_count,
-        "ascending": ascending,
-        "workspace_id": workspace_id,
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "schedule": {
-            "cron": "0 19 * * *"  # 默认每天19:00
-        }
-    }
-    try:
-        # 先判断文件是否存在且非空
-        if not os.path.exists(json_path) or os.path.getsize(json_path) == 0:
-            param_dict = {}
-        else:
-            with open(json_path, "r", encoding="utf-8") as f:
-                try:
-                    param_dict = json.load(f)
-                except json.JSONDecodeError:
-                    return False, f"添加定时任务失败: {json_path} 文件内容不是合法JSON。", None
-
-        if chat_id in param_dict:
-            return False, "该群已存在定时任务，无需重复添加。", param_dict[chat_id]
-
-        param_dict[chat_id] = default_config
-
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(param_dict, f, ensure_ascii=False, indent=2)
-
-        cron_expr = default_config['schedule']['cron']
-        hour = cron_expr.split()[1]
-        minute = cron_expr.split()[0]
-        time_str = f"{hour.zfill(2)}:{minute.zfill(2)}"
-        order_str = "正序" if default_config['ascending'] else "倒序"
-        msg = (
-            f"定时任务已添加，将于每天{time_str}推送。\n"
-            f"推送内容：自{default_config['created']}以来，"
-            f"按创建时间{order_str}，"
-            f"未结束的“bug转需求”需求，"
-            f"最多{default_config['max_count']}条。"
-        )
-        return True, msg, default_config
-    except Exception as e:
-        return False, f"添加定时任务失败: {e}", None
-
-def run_bug2story_once(server, chat_id, params):
-    class DummyReqMsg:
-        pass
-    req_msg = DummyReqMsg()
-    req_msg.chat_id = chat_id
-
-    created = params.get("created", "2024-01-01")
-    max_count = int(params.get("max_count", 10))
-    ascending = bool(params.get("ascending", False))
-    workspace_id = params.get("workspace_id")
-    client_id = params.get("client_id")
-    client_secret = params.get("client_secret")
-
-    handle_export_story(
-        req_msg, server,
-        max_count=max_count,
-        ascending=ascending,
-        created=created,
-        workspace_id=workspace_id,
-        client_id=client_id,
-        client_secret=client_secret
-    )
-
-def run_bug2story_task_from_file(server, chat_id, json_path):
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            param_dict = json.load(f)
-        params = param_dict.get(chat_id)
-        print(f"当前参数: {params}")
-        if not params:
-            print(f"[{datetime.now()}] chat_id={chat_id} 未找到配置，跳过")
-            return
-        run_bug2story_once(server, chat_id, params)
-        print(f"[{datetime.now()}] bug2story定时任务已执行，chat_id={chat_id}")
-    except Exception as e:
-        print(f"定时任务执行失败: {e}")
-
-def start_bug2story_scheduler(server, json_path="bug2story_task.json"):
-    try:
-        if not os.path.exists(json_path) or os.path.getsize(json_path) == 0:
-            param_dict = {}
-        else:
-            with open(json_path, "r", encoding="utf-8") as f:
-                param_dict = json.load(f)
-    except FileNotFoundError:
-        param_dict = {}
-    except json.JSONDecodeError:
-        print(f"警告：{json_path} 文件内容不是合法JSON，已忽略。")
-        param_dict = {}
-    scheduler = BackgroundScheduler()
-    for chat_id, params in param_dict.items():
-        schedule = params.get("schedule", {})
-        cron_expr = schedule.get("cron", "0 18 * * *")  # 默认每天18:00
-        trigger = CronTrigger.from_crontab(cron_expr)
-        job_id = f"bug2story_report_job_{chat_id}"
-        scheduler.add_job(
-            partial(run_bug2story_task_from_file, server, chat_id, json_path),
-            trigger,
-            id=job_id,
-            replace_existing=True
-        )
-        print(f"已为chat_id={chat_id}注册定时任务，cron={cron_expr}")
-    scheduler.start()
-    print("所有定时任务已启动")
-    return scheduler
-
-# ========== bug2story参数解析 ==========
-
-def parse_bug2story_args(content):
-    max_count = 10
-    ascending = True
-    created = "2024-01-01"
-    workspace_id = None
-
-    parts = content.strip().split()
-    args = parts[1:] if parts and parts[0].startswith('bug转需求通知') else parts
-
-    # 检查 workspace_id（假设最后一个参数是 workspace_id，且为纯数字且长度大于6）
-    if args and args[-1].isdigit() and len(args[-1]) > 6:
-        workspace_id = int(args[-1])
-        args = args[:-1]
-
-    if args and re.match(r'^\d{4}-\d{2}-\d{2}$', args[-1]):
-        created = args[-1]
-        args = args[:-1]
-
-    for arg in args:
-        if arg.isdigit():
-            max_count = int(arg)
-        elif arg.lower() == 'asc':
-            ascending = True
-        elif arg.lower() == 'desc':
-            ascending = False
-
-    return max_count, ascending, created, workspace_id
 
 # ========== 帮助信息 ==========
 
@@ -235,6 +82,9 @@ def help_md():
         - @bug追踪 bug转需求通知 2024-06-01 20428244          # 10条，降序，起始时间2024-06-01
 - 功能六 ：bug转需求通知定时任务开启
     - 在你需要推送的群中，@bug追踪 bug转需求定时通知 项目空间id
+    - 示例用法：
+        - @bug追踪 bug转需求定时通知 10 asc 2024-01-01 "0 11-18 \\* \\* \\*" 70109736
+    - 参数可配置，在功能5的基础上，额外参数 cron表达式 "0 11-18 \\* \\* \\*" -> 每天11-18点定时推送
 - 其他功能敬请期待
 """
 
@@ -272,10 +122,10 @@ def msg_handler(req_msg: ReqMsg, server: WecomBotServer):
             ret.content = "权限配置成功！"
             return ret
 
-    # 再判断权限
+    # 判断权限
     if not is_group_configured(chat_id):
         ret = RspTextMsg()
-        ret.content = "请配置应用权限"
+        ret.content = "请配置应用权限，链接：https://iwiki.woa.com/p/4015266215"
         return ret
 
     # 获取当前群的 client_id, client_secret
@@ -297,22 +147,22 @@ def msg_handler(req_msg: ReqMsg, server: WecomBotServer):
         elif content == '版本缺陷对比报告' and server is not None:
             return handle_version_compare_report(req_msg, server, client_id, client_secret)
         elif content.startswith('bug转需求定时通知'):
-            max_count, ascending, created, workspace_id = parse_bug2story_args(content.replace('定时', ''))
+            max_count, ascending, created, workspace_id, cron_expr = parse_bug2story_args(content.replace('定时', ''))
             if workspace_id is None:
                 ret = RspTextMsg()
-                ret.content = "请在命令最后加上 workspace_id（如：bug转需求定时通知 10 asc 2024-06-01 123456789），workspace_id 必填。"
+                ret.content = "请在命令最后加上 workspace_id（如：bug转需求定时通知 10 asc 2024-06-01 \"0 10-23 * * *\" 123456789），workspace_id 必填。"
                 return ret
-            chat_id = req_msg.chat_id
+
             ok, msg, params = add_bug2story_task(chat_id, max_count, ascending, created, workspace_id, client_id,
-                                                 client_secret)
+                                                 client_secret, cron_expr)
             if params:
                 run_bug2story_once(server, chat_id, params)
             reload_bug2story_scheduler(server)
+            server.send_markdown(chat_id, msg)
             ret = RspTextMsg()
-            ret.content = msg
             return ret
         elif content.startswith('bug转需求通知'):
-            max_count, ascending, created, workspace_id = parse_bug2story_args(content)
+            max_count, ascending, created, workspace_id, _ = parse_bug2story_args(content)
             if workspace_id is None:
                 ret = RspTextMsg()
                 ret.content = "请在命令最后加上 workspace_id（如：bug转需求通知 10 asc 2024-06-01 123456789），workspace_id 必填。"
@@ -331,21 +181,26 @@ def msg_handler(req_msg: ReqMsg, server: WecomBotServer):
 def event_handler(req_msg):
     ret = RspMarkdownMsg()
     if hasattr(req_msg, "event_type") and req_msg.event_type == 'add_to_chat':
-        ret.content = f'msg_type: {req_msg.msg_type}\n群会话ID: {req_msg.chat_id}\n查询用法请回复: help'
+        ret.content = f'群会话ID: {req_msg.chat_id}\n请配置应用权限，链接：https://iwiki.woa.com/p/4015266215\n查询用法请回复: help'
     return ret
 
 # ========== 定时任务 reload 逻辑 ==========
 
-global_scheduler = None
+
+from apscheduler.schedulers import SchedulerNotRunningError
 
 def reload_bug2story_scheduler(server):
     global global_scheduler
     if global_scheduler:
-        global_scheduler.shutdown(wait=False)
+        try:
+            if global_scheduler.running:
+                global_scheduler.shutdown(wait=False)
+        except SchedulerNotRunningError:
+            # 调度器未运行，忽略
+            pass
     global_scheduler = start_bug2story_scheduler(server)
 
 # ========== 主程序入口 ==========
-
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
@@ -355,20 +210,21 @@ def main():
             return
         print("Uncaught exception:", exc_type, exc_value)
         traceback.print_tb(exc_traceback)
+
     sys.excepthook = handle_exception
 
-    token = 'L2AWg2NabY3fyRCQGAV'
-    aes_key = 'kgF5xmSMgD1gtG94KT8ulPjoUfCz4HfHlXW7PYWmoar'
+    token = 'xxx'
+    aes_key = 'xxxxx'
     corp_id = ''
     host = '0.0.0.0'
-    port = 8001
-    bot_key = '09fc6dd7-7063-49b6-b7cf-a11ad8de7868'
-    bot_name = 'cyx进进雪饼'
+    port = 5001
+    bot_key = 'f0488436-460f-xxxx-a180-1c98aa1104a2'
+    bot_name = 'bug追踪'
 
     start_scheduler()  # 其他定时任务
 
     server = WecomBotServer(
-        bot_name, host, port, path='/bug_notify',
+        bot_name, host, port, path='/wecom_bot',
         token=token, aes_key=aes_key, corp_id=corp_id, bot_key=bot_key
     )
 
